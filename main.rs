@@ -1,3 +1,4 @@
+use chrono::{Local, Timelike, NaiveTime};
 use chrono::prelude::*;
 use reqwest::blocking::get;
 use serde_json::json;
@@ -68,6 +69,21 @@ const WEATHER_CODES: &[(i32, &str)] = &[
 ];
 
 fn main() {
+    let moon_phases: HashMap<&str, &str> = [
+        ("New Moon", "🌑"),
+        ("Waxing Crescent", "🌒"),
+        ("First Quarter", "🌓"),
+        ("Waxing Gibbous", "🌔"),
+        ("Full Moon", "🌕"),
+        ("Waning Gibbous", "🌖"),
+        ("Last Quarter", "🌗"),
+        ("Waning Crescent", "🌘"),
+        ("Crescent", "🌙"),
+    ]
+    .iter()
+    .cloned()
+    .collect();
+    
     let args: Vec<String> = env::args().collect();
 
     let main_indicator = match args.iter().position(|arg| arg == "--main-indicator") {
@@ -111,12 +127,45 @@ fn main() {
     } else {
         current_condition["FeelsLikeC"].as_str().unwrap()
     };
+    
+    let moon_phase = &weather["weather"][0]["astronomy"][0]["moon_phase"].as_str().unwrap();
     let weather_code = current_condition["weatherCode"].as_str().unwrap();
-    let weather_icon = WEATHER_CODES
-        .iter()
-        .find(|(code, _)| *code == weather_code.parse::<i32>().unwrap())
-        .map(|(_, symbol)| symbol)
-        .unwrap();
+    
+    let current_time = Local::now().time();
+    let sunset_time = &weather["weather"][0]["astronomy"][0]["sunset"].as_str().unwrap();
+    let sunrise_time = &weather["weather"][0]["astronomy"][0]["sunrise"].as_str().unwrap();
+    let sunrise = NaiveTime::parse_from_str(sunrise_time, "%I:%M %p").unwrap();
+    let sunset = NaiveTime::parse_from_str(sunset_time, "%I:%M %p").unwrap();
+
+    let weather_icon: &str;
+
+    let mut has_sun_icon = false;
+
+    match weather_code {
+        "113" | "116" | "122" | "123" | "124" => {
+            has_sun_icon = true;
+        }
+        _ => {}
+    }
+    
+    if current_time > sunrise || current_time < sunset && has_sun_icon {
+        // It's night time, so use moon emoji if the weather
+        // code doesn't have a sun emoji
+        let default_moon_icon = "🌕";
+        weather_icon = moon_phases
+            .get(moon_phase)
+            .unwrap_or(&default_moon_icon);
+    } else {
+        // It's daytime
+        weather_icon = WEATHER_CODES
+            .iter()
+            .find(|(code, _)| *code == weather_code.parse::<i32>().unwrap())
+            .map(|(_, symbol)| symbol)
+            .unwrap();
+    }
+
+    // TODO: Add moon icons in the tooltip
+    
     let text = format!("{} {}", weather_icon, indicator);
     data.insert("text", text);
 
