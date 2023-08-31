@@ -131,41 +131,31 @@ fn main() {
     let moon_phase = &weather["weather"][0]["astronomy"][0]["moon_phase"].as_str().unwrap();
     let weather_code = current_condition["weatherCode"].as_str().unwrap();
     
+    // there's probably a better way to do this
     let current_time = Local::now().time();
-    let sunset_time = &weather["weather"][0]["astronomy"][0]["sunset"].as_str().unwrap();
-    let sunrise_time = &weather["weather"][0]["astronomy"][0]["sunrise"].as_str().unwrap();
-    let sunrise = NaiveTime::parse_from_str(sunrise_time, "%I:%M %p").unwrap();
-    let sunset = NaiveTime::parse_from_str(sunset_time, "%I:%M %p").unwrap();
-
+    let sunrise = parse_time(&weather, "sunrise");
+    let sunset = parse_time(&weather, "sunset");
     let weather_icon: &str;
-
-    let mut has_sun_icon = false;
-
-    match weather_code {
-        "113" | "116" | "122" | "123" | "124" => {
-            has_sun_icon = true;
-        }
-        _ => {}
-    }
     
-    if current_time > sunrise || current_time < sunset && has_sun_icon {
-        // It's night time, so use moon emoji if the weather
-        // code doesn't have a sun emoji
-        let default_moon_icon = "🌕";
-        weather_icon = moon_phases
-            .get(moon_phase)
-            .unwrap_or(&default_moon_icon);
+    let is_daytime = if sunrise <= sunset {
+        current_time >= sunrise && current_time <= sunset
     } else {
-        // It's daytime
+        current_time >= sunrise || current_time <= sunset
+    };
+
+    if is_daytime {
         weather_icon = WEATHER_CODES
             .iter()
             .find(|(code, _)| *code == weather_code.parse::<i32>().unwrap())
             .map(|(_, symbol)| symbol)
             .unwrap();
+    } else {
+        let default_moon_icon = "🌕";
+        weather_icon = moon_phases
+            .get(moon_phase)
+            .unwrap_or(&default_moon_icon);
     }
 
-    // TODO: Add moon icons in the tooltip
-    
     let text = format!("{} {}", weather_icon, indicator);
     data.insert("text", text);
 
@@ -204,13 +194,13 @@ fn main() {
 
         if fahrenheit {
             tooltip += &format!(
-                "⬆️ {}° ⬇️ {}° ",
+                "H:{}° L:{}° ",
                 day["maxtempF"].as_str().unwrap(),
                 day["mintempF"].as_str().unwrap(),
             );
         } else {
             tooltip += &format!(
-                "⬆️ {}° ⬇️ {}° ",
+                "H:{}° L:{}° ",
                 day["maxtempC"].as_str().unwrap(),
                 day["mintempC"].as_str().unwrap(),
             );
@@ -321,4 +311,9 @@ fn format_ampm_time(day: &serde_json::Value, key: &str, ampm: bool) -> String {
             .format("%H:%M")
             .to_string()
     }
+}
+
+fn parse_time(weather: &serde_json::Value, key: &str) -> NaiveTime {
+    let time = weather["weather"][0]["astronomy"][0][key].as_str().unwrap();
+    NaiveTime::parse_from_str(time, "%I:%M %p").unwrap()
 }
